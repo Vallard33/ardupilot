@@ -1,5 +1,5 @@
 ARG BASE_IMAGE="ubuntu"
-ARG TAG="22.04"
+ARG TAG="20.04"
 FROM ${BASE_IMAGE}:${TAG}
 WORKDIR /ardupilot
 
