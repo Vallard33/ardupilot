@@ -51,28 +51,26 @@ extern const AP_HAL::HAL &hal;
 
 #define int16_val(v, idx) ((int16_t)(((uint16_t)v[2 * idx] << 8) | v[2 * idx + 1]))
 
-#define PORT_COM "COM3"
+#define PORT_COM "/dev/ttyUSB0"
 #define BAUD_RATE 112500
 
 AP_InertialSensor_ORIENTUS::AP_InertialSensor_ORIENTUS(AP_InertialSensor &imu,
-                                                       AP_HAL::OwnPtr<AP_HAL::Device> _dev_accel,
-                                                       AP_HAL::OwnPtr<AP_HAL::Device> _dev_gyro,
+                                                       AP_HAL::OwnPtr<AP_HAL::Device> dev,
                                                        enum Rotation _rotation)
-    : AP_InertialSensor_Backend(imu), dev_accel(std::move(_dev_accel)), dev_gyro(std::move(_dev_gyro)), rotation(_rotation)
+    : AP_InertialSensor_Backend(imu), _dev(std::move(dev)), rotation(_rotation)
 {
 }
 
 AP_InertialSensor_Backend *
 AP_InertialSensor_ORIENTUS::probe(AP_InertialSensor &imu,
-                                  AP_HAL::OwnPtr<AP_HAL::SPIDevice> dev_accel,
-                                  AP_HAL::OwnPtr<AP_HAL::SPIDevice> dev_gyro,
                                   enum Rotation rotation)
 {
-    if (!dev_accel || !dev_gyro)
+    AP_HAL::OwnPtr<AP_HAL::Device> dev;
+    if (!dev)
     {
         return nullptr;
     }
-    auto sensor = NEW_NOTHROW AP_InertialSensor_ORIENTUS(imu, std::move(dev_accel), std::move(dev_gyro), rotation);
+    auto sensor = NEW_NOTHROW AP_InertialSensor_ORIENTUS(imu, std::move(dev), rotation);
 
     if (!sensor)
     {
@@ -91,29 +89,8 @@ AP_InertialSensor_ORIENTUS::probe(AP_InertialSensor &imu,
 void AP_InertialSensor_ORIENTUS::start()
 {
 
-    /* Find the serial port */
-    comEnumerate();
-    comPortIndex = comFindPort(PORT_COM);
-    if (comPortIndex == -1)
-    {
-        DEV_PRINTF("Serial port not available\n");
-        exit(EXIT_FAILURE);
-    }
-    /* Open the serial port */
-    //if (comOpen(comPortIndex, atoi(BAUD_RATE)) == 0)
-    if (comOpen(comPortIndex, BAUD_RATE) == 0)  //ici atoi ne sert à rien car on a déjà un entier
-    {
-        DEV_PRINTF("Could not open serial port\n");
-        exit(EXIT_FAILURE);
-    }
-
-    /* Request all the configuration and the device information from the unit */
-    transmit(request_all_configuration, sizeof(request_all_configuration));
-
-    an_decoder_initialise(&an_decoder);
-
-    if (!_imu.register_accel(accel_instance, DEV_BACKEND_SAMPLE_RATE, dev_accel->get_bus_id_devtype(DEVTYPE_INS_ORIENTUS)) ||
-        !_imu.register_gyro(gyro_instance, DEV_BACKEND_SAMPLE_RATE, dev_gyro->get_bus_id_devtype(DEVTYPE_INS_ORIENTUS)))
+    if (!_imu.register_accel(accel_instance, DEV_BACKEND_SAMPLE_RATE, _dev->get_bus_id_devtype(DEVTYPE_ACC_ORIENTUS)) ||
+        !_imu.register_gyro(gyro_instance, DEV_BACKEND_SAMPLE_RATE, _dev->get_bus_id_devtype(DEVTYPE_GYR_ORIENTUS)))
     {
         return;
     }
@@ -123,57 +100,52 @@ void AP_InertialSensor_ORIENTUS::start()
     set_accel_orientation(accel_instance, rotation);
 
     // setup callbacks on le fait juste pour accel parce que read_packet change aussi le gyro
-    dev_accel->register_periodic_callback(1000000UL / DEV_BACKEND_SAMPLE_RATE,
+    _dev->register_periodic_callback(1000000UL / DEV_BACKEND_SAMPLE_RATE,
                                           FUNCTOR_BIND_MEMBER(&AP_InertialSensor_ORIENTUS::read_packet, void));
-    // dev_gyro->register_periodic_callback(1000000UL / DEV_BACKEND_SAMPLE_RATE,
-    //                                     FUNCTOR_BIND_MEMBER(&AP_InertialSensor_ORIENTUS::read_gyro, void));
+    
+}
+
+bool AP_InertialSensor_ORIENTUS::hardware_init()
+{
+    
+    _dev->get_semaphore()->take_blocking();
+    // Il faudrait personnaliser tout ça si on veut changer les ranges de l'accéléromètre et du gyroscope et pour d'autres paramètres, ...
+    /* Find the serial port */
+    comEnumerate();
+    comPortIndex = comFindPort(PORT_COM);
+    if (comPortIndex == -1)
+    {
+        DEV_PRINTF("Serial port not available\n");
+        _dev->get_semaphore()->give();
+        return false;
+    }
+    /* Open the serial port */
+    //if (comOpen(comPortIndex, atoi(BAUD_RATE)) == 0)
+    if (comOpen(comPortIndex, BAUD_RATE) == 0)  //ici atoi ne sert à rien car on a déjà un entier
+    {
+        DEV_PRINTF("Could not open serial port\n");
+        _dev->get_semaphore()->give();
+        return false;
+    }
+
+    /* Request all the configuration and the device information from the unit */
+    transmit(request_all_configuration, sizeof(request_all_configuration));
+    
+    an_decoder_initialise(&an_decoder);
+    
     packet_periods_packet_t packet = {
         .permanent = 0,
         .clear_existing_packets = 1,
         .packet_periods = {}};
     an_packet_transmit(encode_packet_periods_packet(&packet));
-}
-
-/*
-  probe and initialise accelerometer
- */
-bool AP_InertialSensor_ORIENTUS::accel_init()
-{
-    dev_accel->get_semaphore()->take_blocking();
-
-    DEV_PRINTF("ORIENTUS: found accel\n");
-
-    dev_accel->get_semaphore()->give();
+    
+    _dev->get_semaphore()->give();
     return true;
-
-//failed:
-//    dev_accel->get_semaphore()->give();
-//    return false;
-}
-
-/*
-  probe and initialise gyro
- */
-bool AP_InertialSensor_ORIENTUS::gyro_init()
-{
-    dev_gyro->get_semaphore()->take_blocking();
-
-    DEV_PRINTF("ORIENTUS: found gyro\n");
-
-    dev_gyro->get_semaphore()->give();
-    return true;
-
-//failed:
-//    dev_gyro->get_semaphore()->give();
-//    return false;
 }
 
 bool AP_InertialSensor_ORIENTUS::init()
-{
-    dev_accel->set_read_flag(0x80);
-    dev_gyro->set_read_flag(0x80);
-
-    return accel_init() && gyro_init();
+{   
+    return hardware_init();
 }
 
 /*

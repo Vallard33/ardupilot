@@ -11,8 +11,6 @@
 class AP_InertialSensor_ORIENTUS : public AP_InertialSensor_Backend {
     public:
         static AP_InertialSensor_Backend *probe(AP_InertialSensor &imu,
-                                                AP_HAL::OwnPtr<AP_HAL::SPIDevice> dev_accel,
-                                                AP_HAL::OwnPtr<AP_HAL::SPIDevice> dev_gyro,
                                                 enum Rotation rotation);
     
         /**
@@ -30,15 +28,13 @@ class AP_InertialSensor_ORIENTUS : public AP_InertialSensor_Backend {
 	    raw_sensors_packet_t raw_sensors_packet;
 
         AP_InertialSensor_ORIENTUS(AP_InertialSensor &imu,
-                                 AP_HAL::OwnPtr<AP_HAL::Device> dev_accel,
-                                 AP_HAL::OwnPtr<AP_HAL::Device> dev_gyro,
-                                 enum Rotation rotation);
+                                   AP_HAL::OwnPtr<AP_HAL::Device> dev,
+                                   enum Rotation rotation);
     
         /*
          initialise hardware layer
          */
-        bool accel_init();
-        bool gyro_init();
+        bool hardware_init();
     
         /*
           initialise driver
@@ -51,9 +47,9 @@ class AP_InertialSensor_ORIENTUS : public AP_InertialSensor_Backend {
         void read_packet();
         
     
-        AP_HAL::OwnPtr<AP_HAL::Device> dev_accel;
-        AP_HAL::OwnPtr<AP_HAL::Device> dev_gyro;
-    
+        AP_HAL::OwnPtr<AP_HAL::Device> _dev;
+        
+
         enum Rotation rotation;
         uint8_t temperature_counter;
 
