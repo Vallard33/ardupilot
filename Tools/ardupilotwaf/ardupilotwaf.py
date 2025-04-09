@@ -41,6 +41,7 @@ COMMON_VEHICLE_DEPENDENT_LIBRARIES = [
     'AP_HAL',
     'AP_HAL_Empty',
     'AP_InertialSensor',
+    'AP_InertialSensor/ORIENTUS_scripts',
     'AP_Math',
     'AP_Mission',
     'AP_DAL',
@@ -128,7 +129,7 @@ COMMON_VEHICLE_DEPENDENT_LIBRARIES = [
     'AP_Arming',
     'AP_RCMapper',
     'AP_MultiHeap',
-    'AP_Follow',
+    'AP_Follow'
 ]
 
 def get_legacy_defines(sketch_name, bld):

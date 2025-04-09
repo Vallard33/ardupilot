@@ -28,7 +28,6 @@ class AP_InertialSensor_ORIENTUS : public AP_InertialSensor_Backend {
 	    raw_sensors_packet_t raw_sensors_packet;
 
         AP_InertialSensor_ORIENTUS(AP_InertialSensor &imu,
-                                   AP_HAL::OwnPtr<AP_HAL::Device> dev,
                                    enum Rotation rotation);
     
         /*
@@ -46,10 +45,8 @@ class AP_InertialSensor_ORIENTUS : public AP_InertialSensor_Backend {
          */
         void read_packet();
         
-    
-        AP_HAL::OwnPtr<AP_HAL::Device> _dev;
+        static uint8_t bus_id;
         
-
         enum Rotation rotation;
         uint8_t temperature_counter;
 

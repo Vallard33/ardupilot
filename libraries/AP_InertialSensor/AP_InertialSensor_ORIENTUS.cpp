@@ -2,6 +2,7 @@
 #include <utility>
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Math/AP_Math.h>
+#include <GCS_MAVLink/GCS.h>
 
 #define RS232 0
 #define NETWORK 1
@@ -27,11 +28,11 @@
 #include <unistd.h>
 // #if CONNECTION_TYPE == RS232
 // #include "rs232/rs232.h"
-//#elif CONNECTION_TYPE == NETWORK
-//#include <sys/socket.h>
-//#include <arpa/inet.h>
-//#include <netdb.h>
-//#endif
+// #elif CONNECTION_TYPE == NETWORK
+// #include <sys/socket.h>
+// #include <arpa/inet.h>
+// #include <netdb.h>
+// #endif
 #endif
 
 #include "AP_InertialSensor_ORIENTUS.h"
@@ -51,13 +52,12 @@ extern const AP_HAL::HAL &hal;
 
 #define int16_val(v, idx) ((int16_t)(((uint16_t)v[2 * idx] << 8) | v[2 * idx + 1]))
 
-#define PORT_COM "/dev/ttyUSB0"
+#define PORT_COM "ttyUSB0"
 #define BAUD_RATE 112500
 
 AP_InertialSensor_ORIENTUS::AP_InertialSensor_ORIENTUS(AP_InertialSensor &imu,
-                                                       AP_HAL::OwnPtr<AP_HAL::Device> dev,
                                                        enum Rotation _rotation)
-    : AP_InertialSensor_Backend(imu), _dev(std::move(dev)), rotation(_rotation)
+    : AP_InertialSensor_Backend(imu), rotation(_rotation)
 {
 }
 
@@ -65,12 +65,7 @@ AP_InertialSensor_Backend *
 AP_InertialSensor_ORIENTUS::probe(AP_InertialSensor &imu,
                                   enum Rotation rotation)
 {
-    AP_HAL::OwnPtr<AP_HAL::Device> dev;
-    if (!dev)
-    {
-        return nullptr;
-    }
-    auto sensor = NEW_NOTHROW AP_InertialSensor_ORIENTUS(imu, std::move(dev), rotation);
+    auto sensor = NEW_NOTHROW AP_InertialSensor_ORIENTUS(imu, rotation);
 
     if (!sensor)
     {
@@ -86,65 +81,58 @@ AP_InertialSensor_ORIENTUS::probe(AP_InertialSensor &imu,
     return sensor;
 }
 
+uint8_t AP_InertialSensor_ORIENTUS::bus_id = 0;
+
 void AP_InertialSensor_ORIENTUS::start()
 {
-
-    if (!_imu.register_accel(accel_instance, DEV_BACKEND_SAMPLE_RATE, _dev->get_bus_id_devtype(DEVTYPE_ACC_ORIENTUS)) ||
-        !_imu.register_gyro(gyro_instance, DEV_BACKEND_SAMPLE_RATE, _dev->get_bus_id_devtype(DEVTYPE_GYR_ORIENTUS)))
+    if (!_imu.register_gyro(gyro_instance, DEV_BACKEND_SAMPLE_RATE, AP_HAL::Device::make_bus_id(AP_HAL::Device::BUS_TYPE_SERIAL, bus_id, 1, DEVTYPE_ACC_ORIENTUS)) ||
+        !_imu.register_accel(accel_instance, DEV_BACKEND_SAMPLE_RATE, AP_HAL::Device::make_bus_id(AP_HAL::Device::BUS_TYPE_SERIAL, bus_id, 2, DEVTYPE_GYR_ORIENTUS)))
     {
         return;
     }
+    bus_id++;
+    hal.scheduler->register_timer_process(FUNCTOR_BIND_MEMBER(&AP_InertialSensor_ORIENTUS::read_packet, void));
 
     // setup sensor rotations from probe()
     set_gyro_orientation(gyro_instance, rotation);
     set_accel_orientation(accel_instance, rotation);
-
-    // setup callbacks on le fait juste pour accel parce que read_packet change aussi le gyro
-    _dev->register_periodic_callback(1000000UL / DEV_BACKEND_SAMPLE_RATE,
-                                          FUNCTOR_BIND_MEMBER(&AP_InertialSensor_ORIENTUS::read_packet, void));
-    
 }
 
 bool AP_InertialSensor_ORIENTUS::hardware_init()
 {
-    
-    _dev->get_semaphore()->take_blocking();
     // Il faudrait personnaliser tout ça si on veut changer les ranges de l'accéléromètre et du gyroscope et pour d'autres paramètres, ...
     /* Find the serial port */
     comEnumerate();
     comPortIndex = comFindPort(PORT_COM);
     if (comPortIndex == -1)
     {
-        DEV_PRINTF("Serial port not available\n");
-        _dev->get_semaphore()->give();
+        gcs().send_text(MAV_SEVERITY_CRITICAL, "Orientus : Serial port not available\n");
         return false;
     }
     /* Open the serial port */
-    //if (comOpen(comPortIndex, atoi(BAUD_RATE)) == 0)
-    if (comOpen(comPortIndex, BAUD_RATE) == 0)  //ici atoi ne sert à rien car on a déjà un entier
+    // if (comOpen(comPortIndex, atoi(BAUD_RATE)) == 0)
+    if (comOpen(comPortIndex, BAUD_RATE) == 0) // ici atoi ne sert à rien car on a déjà un entier
     {
-        DEV_PRINTF("Could not open serial port\n");
-        _dev->get_semaphore()->give();
+        gcs().send_text(MAV_SEVERITY_CRITICAL, "Orientus : Could not open serial port\n");
         return false;
     }
 
     /* Request all the configuration and the device information from the unit */
     transmit(request_all_configuration, sizeof(request_all_configuration));
-    
+
     an_decoder_initialise(&an_decoder);
-    
+
     packet_periods_packet_t packet = {
         .permanent = 0,
         .clear_existing_packets = 1,
         .packet_periods = {}};
     an_packet_transmit(encode_packet_periods_packet(&packet));
-    
-    _dev->get_semaphore()->give();
+
     return true;
 }
 
 bool AP_InertialSensor_ORIENTUS::init()
-{   
+{
     return hardware_init();
 }
 
