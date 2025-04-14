@@ -71,7 +71,7 @@ public:
      * Configure and start all sensors. The empty implementation allows
      * subclasses to already start the sensors when it's detected
      */
-    virtual void start() { }
+    virtual void start() {}
 
     /*
      * Return an AuxiliaryBus if backend has another bus it is able to export
@@ -84,18 +84,18 @@ public:
      */
     int16_t get_id() const { return _id; }
 
-    //Returns the Clip Limit
+    // Returns the Clip Limit
     float get_clip_limit() const { return _clip_limit; }
 
     // get a startup banner to output to the GCS
-    virtual bool get_output_banner(char* banner, uint8_t banner_len) { return false; }
+    virtual bool get_output_banner(char *banner, uint8_t banner_len) { return false; }
 
 #if HAL_EXTERNAL_AHRS_ENABLED
     virtual void handle_external(const AP_ExternalAHRS::ins_data_message_t &pkt) {}
 #endif
 
 #if AP_INERTIALSENSOR_KILL_IMU_ENABLED
-    bool has_been_killed(uint8_t instance) const { return ((1U<<instance) & _imu.imu_kill_mask); }
+    bool has_been_killed(uint8_t instance) const { return ((1U << instance) & _imu.imu_kill_mask); }
 #else
     bool has_been_killed(uint8_t instance) const { return false; }
 #endif
@@ -103,7 +103,8 @@ public:
     // get the backend update rate for the gyro in Hz
     // if the backend polling rate is the same as the sample rate or higher, return raw sample rate
     // override and return the backend rate in Hz if it is lower than the sample rate
-    virtual uint16_t get_gyro_backend_rate_hz() const {
+    virtual uint16_t get_gyro_backend_rate_hz() const
+    {
         return _gyro_raw_sample_rate(gyro_instance);
     }
 
@@ -115,45 +116,45 @@ public:
       If a change is made to a driver that would make existing
       calibration values invalid then this number must be changed.
      */
-    enum DevTypes {
-        DEVTYPE_BMI160       = 0x09,
-        DEVTYPE_L3G4200D     = 0x10,
-        DEVTYPE_ACC_LSM303D  = 0x11,
-        DEVTYPE_ACC_BMA180   = 0x12,
-        DEVTYPE_ACC_MPU6000  = 0x13,
-        DEVTYPE_ACC_MPU9250  = 0x16,
+    enum DevTypes
+    {
+        DEVTYPE_BMI160 = 0x09,
+        DEVTYPE_L3G4200D = 0x10,
+        DEVTYPE_ACC_LSM303D = 0x11,
+        DEVTYPE_ACC_BMA180 = 0x12,
+        DEVTYPE_ACC_MPU6000 = 0x13,
+        DEVTYPE_ACC_MPU9250 = 0x16,
         DEVTYPE_ACC_IIS328DQ = 0x17,
-        DEVTYPE_ACC_LSM9DS1  = 0x18,
-        DEVTYPE_GYR_MPU6000  = 0x21,
-        DEVTYPE_GYR_L3GD20   = 0x22,
-        DEVTYPE_GYR_MPU9250  = 0x24,
+        DEVTYPE_ACC_LSM9DS1 = 0x18,
+        DEVTYPE_GYR_MPU6000 = 0x21,
+        DEVTYPE_GYR_L3GD20 = 0x22,
+        DEVTYPE_GYR_MPU9250 = 0x24,
         DEVTYPE_GYR_I3G4250D = 0x25,
-        DEVTYPE_GYR_LSM9DS1  = 0x26,
+        DEVTYPE_GYR_LSM9DS1 = 0x26,
         DEVTYPE_INS_ICM20789 = 0x27,
         DEVTYPE_INS_ICM20689 = 0x28,
-        DEVTYPE_INS_BMI055   = 0x29,
-        DEVTYPE_SITL         = 0x2A,
-        DEVTYPE_INS_BMI088   = 0x2B,
+        DEVTYPE_INS_BMI055 = 0x29,
+        DEVTYPE_SITL = 0x2A,
+        DEVTYPE_INS_BMI088 = 0x2B,
         DEVTYPE_INS_ICM20948 = 0x2C,
         DEVTYPE_INS_ICM20648 = 0x2D,
         DEVTYPE_INS_ICM20649 = 0x2E,
         DEVTYPE_INS_ICM20602 = 0x2F,
         DEVTYPE_INS_ICM20601 = 0x30,
         DEVTYPE_INS_ADIS1647X = 0x31,
-        DEVTYPE_SERIAL       = 0x32,
+        DEVTYPE_SERIAL = 0x32,
         DEVTYPE_INS_ICM40609 = 0x33,
         DEVTYPE_INS_ICM42688 = 0x34,
         DEVTYPE_INS_ICM42605 = 0x35,
         DEVTYPE_INS_ICM40605 = 0x36,
         DEVTYPE_INS_IIM42652 = 0x37,
-        DEVTYPE_BMI270       = 0x38,
-        DEVTYPE_INS_BMI085   = 0x39,
+        DEVTYPE_BMI270 = 0x38,
+        DEVTYPE_INS_BMI085 = 0x39,
         DEVTYPE_INS_ICM42670 = 0x3A,
         DEVTYPE_INS_ICM45686 = 0x3B,
-        DEVTYPE_INS_SCHA63T  = 0x3C,
+        DEVTYPE_INS_SCHA63T = 0x3C,
         DEVTYPE_INS_IIM42653 = 0x3D,
-        DEVTYPE_ACC_ORIENTUS = 0x3E,
-        DEVTYPE_GYR_ORIENTUS = 0x3F,
+        DEVTYPE_INS_ORIENTUS = 0x3E
     };
 
 protected:
@@ -163,7 +164,7 @@ protected:
     // semaphore for access to shared frontend data
     HAL_Semaphore _sem;
 
-    //Default Clip Limit
+    // Default Clip Limit
     float _clip_limit = (16.0f - 0.5f) * GRAVITY_MSS;
 
     // instance numbers of accel and gyro data
@@ -188,11 +189,11 @@ protected:
     // corrected (_rotate_and_correct_gyro)
     // The sample_us value must be provided for non-FIFO based
     // sensors, and should be set to zero for FIFO based sensors
-    void _notify_new_gyro_raw_sample(uint8_t instance, const Vector3f &accel, uint64_t sample_us=0) __RAMFUNC__;
+    void _notify_new_gyro_raw_sample(uint8_t instance, const Vector3f &accel, uint64_t sample_us = 0) __RAMFUNC__;
 
     // alternative interface using delta-angles. Rotation and correction is handled inside this function
     void _notify_new_delta_angle(uint8_t instance, const Vector3f &dangle);
-    
+
     // rotate accel vector, scale, offset and publish
     void _publish_accel(uint8_t instance, const Vector3f &accel) __RAMFUNC__; /* front end */
 
@@ -202,11 +203,11 @@ protected:
     // be rotated and corrected (_rotate_and_correct_accel)
     // The sample_us value must be provided for non-FIFO based
     // sensors, and should be set to zero for FIFO based sensors
-    void _notify_new_accel_raw_sample(uint8_t instance, const Vector3f &accel, uint64_t sample_us=0, bool fsync_set=false) __RAMFUNC__;
+    void _notify_new_accel_raw_sample(uint8_t instance, const Vector3f &accel, uint64_t sample_us = 0, bool fsync_set = false) __RAMFUNC__;
 
     // alternative interface using delta-velocities. Rotation and correction is handled inside this function
     void _notify_new_delta_velocity(uint8_t instance, const Vector3f &dvelocity);
-    
+
     // set the amount of oversamping a accel is doing
     void _set_accel_oversampling(uint8_t instance, uint8_t n);
 
@@ -214,28 +215,38 @@ protected:
     void _set_gyro_oversampling(uint8_t instance, uint8_t n);
 
     // indicate the backend is doing sensor-rate sampling for this accel
-    void _set_accel_sensor_rate_sampling_enabled(uint8_t instance, bool value) {
-        const uint8_t bit = (1<<instance);
-        if (value) {
+    void _set_accel_sensor_rate_sampling_enabled(uint8_t instance, bool value)
+    {
+        const uint8_t bit = (1 << instance);
+        if (value)
+        {
             _imu._accel_sensor_rate_sampling_enabled |= bit;
-        } else {
+        }
+        else
+        {
             _imu._accel_sensor_rate_sampling_enabled &= ~bit;
         }
     }
 
-    void _set_gyro_sensor_rate_sampling_enabled(uint8_t instance, bool value) {
-        const uint8_t bit = (1<<instance);
-        if (value) {
+    void _set_gyro_sensor_rate_sampling_enabled(uint8_t instance, bool value)
+    {
+        const uint8_t bit = (1 << instance);
+        if (value)
+        {
             _imu._gyro_sensor_rate_sampling_enabled |= bit;
-        } else {
+        }
+        else
+        {
             _imu._gyro_sensor_rate_sampling_enabled &= ~bit;
         }
     }
 
-    void _set_raw_sample_accel_multiplier(uint8_t instance, uint16_t mul) {
+    void _set_raw_sample_accel_multiplier(uint8_t instance, uint16_t mul)
+    {
         _imu._accel_raw_sampling_multiplier[instance] = mul;
     }
-    void _set_raw_sample_gyro_multiplier(uint8_t instance, uint16_t mul) {
+    void _set_raw_sample_gyro_multiplier(uint8_t instance, uint16_t mul)
+    {
         _imu._gyro_raw_sampling_multiplier[instance] = mul;
     }
 
@@ -246,27 +257,31 @@ protected:
     bool sensors_converging() const;
 
     // get accelerometer raw sample rate.
-    float _accel_raw_sample_rate(uint8_t instance) const {
+    float _accel_raw_sample_rate(uint8_t instance) const
+    {
         return _imu._accel_raw_sample_rates[instance];
     }
 
     // set accelerometer raw sample rate;  note that the storage type
     // is actually float!
-    void _set_accel_raw_sample_rate(uint8_t instance, uint16_t rate_hz) {
+    void _set_accel_raw_sample_rate(uint8_t instance, uint16_t rate_hz)
+    {
         _imu._accel_raw_sample_rates[instance] = rate_hz;
     }
-    
+
     // get gyroscope raw sample rate
-    float _gyro_raw_sample_rate(uint8_t instance) const {
+    float _gyro_raw_sample_rate(uint8_t instance) const
+    {
         return _imu._gyro_raw_sample_rates[instance];
     }
 
     // set gyro raw sample rate; note that the storage type is
     // actually float!
-    void _set_gyro_raw_sample_rate(uint8_t instance, uint16_t rate_hz) {
+    void _set_gyro_raw_sample_rate(uint8_t instance, uint16_t rate_hz)
+    {
         _imu._gyro_raw_sample_rates[instance] = rate_hz;
     }
-    
+
     // publish a temperature value
     void _publish_temperature(uint8_t instance, float temperature); /* front end */
 
@@ -275,7 +290,7 @@ protected:
 
     // increment gyro error_count
     void _inc_gyro_error_count(uint8_t instance) __RAMFUNC__;
-    
+
     // backend unique identifier or -1 if backend doesn't identify itself
     int16_t _id = -1;
 
@@ -286,17 +301,18 @@ protected:
     uint16_t _gyro_filter_cutoff(void) const { return _imu._gyro_filter_cutoff; }
 
     // return the requested loop rate at which samples will be made available in Hz
-    uint16_t get_loop_rate_hz(void) const {
+    uint16_t get_loop_rate_hz(void) const
+    {
         // enum can be directly cast to Hz
         return (uint16_t)_imu._loop_rate;
     }
 
     // common gyro update function for all backends
-    void update_gyro(uint8_t instance) __RAMFUNC__; /* front end */
+    void update_gyro(uint8_t instance) __RAMFUNC__;         /* front end */
     void update_gyro_filters(uint8_t instance) __RAMFUNC__; /* front end */
 
     // common accel update function for all backends
-    void update_accel(uint8_t instance) __RAMFUNC__; /* front end */
+    void update_accel(uint8_t instance) __RAMFUNC__;         /* front end */
     void update_accel_filters(uint8_t instance) __RAMFUNC__; /* front end */
 
     // catch updates to the primary gyro and accel
@@ -307,40 +323,48 @@ protected:
     uint16_t _last_accel_filter_hz;
     uint16_t _last_gyro_filter_hz;
 
-    void set_gyro_orientation(uint8_t instance, enum Rotation rotation) {
+    void set_gyro_orientation(uint8_t instance, enum Rotation rotation)
+    {
         _imu._gyro_orientation[instance] = rotation;
     }
 
-    void set_accel_orientation(uint8_t instance, enum Rotation rotation) {
+    void set_accel_orientation(uint8_t instance, enum Rotation rotation)
+    {
         _imu._accel_orientation[instance] = rotation;
     }
 
-    uint8_t get_gyro_instance() const {
+    uint8_t get_gyro_instance() const
+    {
         return gyro_instance;
     }
 
-    uint8_t get_accel_instance() const {
+    uint8_t get_accel_instance() const
+    {
         return accel_instance;
     }
 
     // increment clipping counted. Used by drivers that do decimation before supplying
     // samples to the frontend
-    void increment_clip_count(uint8_t instance) {
+    void increment_clip_count(uint8_t instance)
+    {
         _imu._accel_clip_count[instance]++;
     }
 
     // should fast sampling be enabled on this IMU?
-    bool enable_fast_sampling(uint8_t instance) const {
-        return (_imu._fast_sampling_mask & (1U<<instance)) != 0;
+    bool enable_fast_sampling(uint8_t instance) const
+    {
+        return (_imu._fast_sampling_mask & (1U << instance)) != 0;
     }
 
     // should highres sampling be enabled on this IMU?
-    bool enable_highres_sampling(uint8_t instance) const {
-        return (HAL_INS_HIGHRES_SAMPLE & (1U<<instance)) != 0;
+    bool enable_highres_sampling(uint8_t instance) const
+    {
+        return (HAL_INS_HIGHRES_SAMPLE & (1U << instance)) != 0;
     }
 
     // if fast sampling is enabled, the rate to use in kHz
-    uint8_t get_fast_sampling_rate() const {
+    uint8_t get_fast_sampling_rate() const
+    {
         return (1 << uint8_t(_imu._fast_sampling_rate));
     }
 
@@ -363,8 +387,7 @@ protected:
     // driver if the sensor is available
 
 private:
-
-    bool should_log_imu_raw() const ;
+    bool should_log_imu_raw() const;
     void log_accel_raw(uint8_t instance, const uint64_t sample_us, const Vector3f &accel) __RAMFUNC__;
     void log_gyro_raw(uint8_t instance, const uint64_t sample_us, const Vector3f &raw_gyro, const Vector3f &filtered_gyro) __RAMFUNC__;
 
@@ -372,6 +395,5 @@ private:
     void Write_ACC(const uint8_t instance, const uint64_t sample_us, const Vector3f &accel) const __RAMFUNC__; // Write ACC data packet: raw accel data
 
 protected:
-    void Write_GYR(const uint8_t instance, const uint64_t sample_us, const Vector3f &gyro, bool use_sample_timestamp=false) const __RAMFUNC__;  // Write GYR data packet: raw gyro data
-
+    void Write_GYR(const uint8_t instance, const uint64_t sample_us, const Vector3f &gyro, bool use_sample_timestamp = false) const __RAMFUNC__; // Write GYR data packet: raw gyro data
 };

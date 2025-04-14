@@ -85,8 +85,8 @@ uint8_t AP_InertialSensor_ORIENTUS::bus_id = 0;
 
 void AP_InertialSensor_ORIENTUS::start()
 {
-    if (!_imu.register_gyro(gyro_instance, DEV_BACKEND_SAMPLE_RATE, AP_HAL::Device::make_bus_id(AP_HAL::Device::BUS_TYPE_SERIAL, bus_id, 1, DEVTYPE_ACC_ORIENTUS)) ||
-        !_imu.register_accel(accel_instance, DEV_BACKEND_SAMPLE_RATE, AP_HAL::Device::make_bus_id(AP_HAL::Device::BUS_TYPE_SERIAL, bus_id, 2, DEVTYPE_GYR_ORIENTUS)))
+    if (!_imu.register_gyro(gyro_instance, DEV_BACKEND_SAMPLE_RATE, AP_HAL::Device::make_bus_id(AP_HAL::Device::BUS_TYPE_SERIAL, bus_id, 1, DEVTYPE_INS_ORIENTUS)) ||
+        !_imu.register_accel(accel_instance, DEV_BACKEND_SAMPLE_RATE, AP_HAL::Device::make_bus_id(AP_HAL::Device::BUS_TYPE_SERIAL, bus_id, 2, DEVTYPE_INS_ORIENTUS)))
     {
         return;
     }
@@ -122,11 +122,17 @@ bool AP_InertialSensor_ORIENTUS::hardware_init()
 
     an_decoder_initialise(&an_decoder);
 
-    packet_periods_packet_t packet = {
+    packet_periods_packet_t packet1 = {
         .permanent = 0,
         .clear_existing_packets = 1,
         .packet_periods = {}};
-    an_packet_transmit(encode_packet_periods_packet(&packet));
+    an_packet_transmit(encode_packet_periods_packet(&packet1));
+
+    sensor_ranges_packet_t packet2 = {
+        .permanent = 0,
+        .accelerometers_range = accelerometer_range_4g,
+        .gyroscopes_range = gyroscope_range_250dps};
+    an_packet_transmit(encode_sensor_ranges_packet(&packet2));
 
     return true;
 }
@@ -142,15 +148,43 @@ bool AP_InertialSensor_ORIENTUS::init()
 void AP_InertialSensor_ORIENTUS::read_packet(void)
 {
     int bytes_received;
-    an_packet_transmit(encode_request_packet(0x1C));
+    an_packet_transmit(encode_request_packet(packet_id_system_state));
+    an_packet_transmit(encode_request_packet(packet_id_raw_sensors));
     if ((bytes_received = receive(an_decoder_pointer(&an_decoder), an_decoder_size(&an_decoder))) > 0)
     { /* increment the decode buffer length by the number of bytes received */
         an_decoder_increment(&an_decoder, bytes_received);
-
         /* decode all the packets in the buffer */
         while ((an_packet = an_packet_decode(&an_decoder)) != NULL)
         {
-            if (an_packet->id == packet_id_raw_sensors) /* raw sensors packet */
+            if (an_packet->id == packet_id_system_state) /* system state packet */
+            {
+                if (decode_system_state_packet(&system_state_packet, an_packet) == 0)
+                {
+                    if (system_state_packet.system_status.b.accelerometer_over_range)
+                    {
+                        if ((accel_over_range_counter++ % 400) == 0)
+                        {
+                            gcs().send_text(MAV_SEVERITY_CRITICAL, "Accelerometer Over Range");
+                        }
+                    }
+                    else
+                    {
+                        accel_over_range_counter = 0;
+                    }
+                    if (system_state_packet.system_status.b.gyroscope_over_range)
+                    {
+                        if ((gyro_over_range_counter++ % 400) == 0)
+                        {
+                            gcs().send_text(MAV_SEVERITY_CRITICAL, "Gyroscope Over Range");
+                        }
+                    }
+                    else
+                    {
+                        gyro_over_range_counter = 0;
+                    }
+                }
+            }
+            else if (an_packet->id == packet_id_raw_sensors) /* raw sensors packet */
             {
                 /* copy all the binary data into the typedef struct for the packet */
                 /* this allows easy access to all the different values             */
@@ -170,6 +204,10 @@ void AP_InertialSensor_ORIENTUS::read_packet(void)
                         float temp_degc = raw_sensors_packet.imu_temperature;
                         _publish_temperature(accel_instance, temp_degc);
                     }
+                }
+                else
+                {
+                    gcs().send_text(MAV_SEVERITY_CRITICAL, "Probleme decryptage");
                 }
             }
             /* Ensure that you free the an_packet when your done with it or you will leak memory */
