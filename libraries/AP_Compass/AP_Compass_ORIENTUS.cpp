@@ -115,6 +115,7 @@ bool AP_Compass_ORIENTUS::init()
 
     set_dev_id(_compass_instance, AP_HAL::Device::make_bus_id(AP_HAL::Device::BUS_TYPE_SERIAL, bus_id, 0, DEVTYPE_ORIENTUS));
     hal.scheduler->register_timer_process(FUNCTOR_BIND_MEMBER(&AP_Compass_ORIENTUS::_update, void));
+    compt =0;
     return hardware_init();
 }
 

@@ -64,9 +64,8 @@ AP_InertialSensor_Backend *
 AP_InertialSensor_ORIENTUS::probe(AP_InertialSensor &imu,
                                   enum Rotation rotation)
 {
-    gcs().send_text(MAV_SEVERITY_CRITICAL, "probe");
     auto sensor = NEW_NOTHROW AP_InertialSensor_ORIENTUS(imu, rotation);
-
+    
     if (!sensor)
     {
         return nullptr;
@@ -92,6 +91,7 @@ void AP_InertialSensor_ORIENTUS::start()
     }
     bus_id++;
     hal.scheduler->register_timer_process(FUNCTOR_BIND_MEMBER(&AP_InertialSensor_ORIENTUS::read_packet, void));
+    compt =0;
 
     // setup sensor rotations from probe()
     set_gyro_orientation(gyro_instance, rotation);
