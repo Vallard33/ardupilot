@@ -23,7 +23,7 @@ public:
     UARTDriver() {}
     /* Do not allow copies */
     CLASS_NO_COPY(UARTDriver);
-
+    virtual    ~UARTDriver() {};
     /*
       the individual HALs need to implement the protected versions of these calls, _begin(), _write(), _read()
       port locking is checked by the top level AP_HAL functions

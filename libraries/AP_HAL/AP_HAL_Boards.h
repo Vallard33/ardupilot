@@ -88,6 +88,7 @@
 #define HAL_INS_MPU6500     19
 #define HAL_INS_INV2_I2C    24
 #define HAL_INS_INV2_SPI    25
+#define HAL_INS_ORIENTUS    26
 
 
 /* Barometer driver types */

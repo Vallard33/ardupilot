@@ -45,6 +45,7 @@
 #if AP_COMPASS_EXTERNALAHRS_ENABLED
 #include "AP_Compass_ExternalAHRS.h"
 #endif
+#include "AP_Compass_ORIENTUS.h"
 #include "AP_Compass.h"
 #include "Compass_learn.h"
 #include <stdio.h>

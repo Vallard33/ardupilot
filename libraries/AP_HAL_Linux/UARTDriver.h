@@ -13,6 +13,8 @@ class UARTDriver : public AP_HAL::UARTDriver {
 public:
     UARTDriver(bool default_console);
 
+    ~UARTDriver() {}; //need to be implemented but added to use OwnPtr
+    
     static UARTDriver *from(AP_HAL::UARTDriver *uart) {
         return static_cast<UARTDriver*>(uart);
     }

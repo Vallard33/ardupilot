@@ -40,19 +40,18 @@
 
 #define ACCEL_BACKEND_SAMPLE_RATE 2000
 #define GYRO_BACKEND_SAMPLE_RATE 2000
-#define DEV_BACKEND_SAMPLE_RATE 400
+#define DEV_BACKEND_SAMPLE_PER 2
+#define DEV_BACKEND_SAMPLE_RATE 1000 / DEV_BACKEND_SAMPLE_PER
 
 #define RADIANS_TO_DEGREES (180.0 / M_PI)
 
 static unsigned char request_all_configuration[] = {0xE2, 0x01, 0x10, 0x9A, 0x73, 0xB6, 0xB4, 0xB5, 0xB8, 0xB9, 0xBA, 0xBC, 0xBD, 0xC0, 0xC2, 0xC3, 0xC4, 0x03, 0xC6, 0x45, 0xC7};
-int comPortIndex = -1;
-int socket_fd = -1;
+
 
 extern const AP_HAL::HAL &hal;
 
 #define int16_val(v, idx) ((int16_t)(((uint16_t)v[2 * idx] << 8) | v[2 * idx + 1]))
 
-#define PORT_COM "ttyUSB0"
 #define BAUD_RATE 112500
 
 AP_InertialSensor_ORIENTUS::AP_InertialSensor_ORIENTUS(AP_InertialSensor &imu,
@@ -65,6 +64,7 @@ AP_InertialSensor_Backend *
 AP_InertialSensor_ORIENTUS::probe(AP_InertialSensor &imu,
                                   enum Rotation rotation)
 {
+    gcs().send_text(MAV_SEVERITY_CRITICAL, "probe");
     auto sensor = NEW_NOTHROW AP_InertialSensor_ORIENTUS(imu, rotation);
 
     if (!sensor)
@@ -100,23 +100,6 @@ void AP_InertialSensor_ORIENTUS::start()
 
 bool AP_InertialSensor_ORIENTUS::hardware_init()
 {
-    // Il faudrait personnaliser tout ça si on veut changer les ranges de l'accéléromètre et du gyroscope et pour d'autres paramètres, ...
-    /* Find the serial port */
-    comEnumerate();
-    comPortIndex = comFindPort(PORT_COM);
-    if (comPortIndex == -1)
-    {
-        gcs().send_text(MAV_SEVERITY_CRITICAL, "Orientus : Serial port not available\n");
-        return false;
-    }
-    /* Open the serial port */
-    // if (comOpen(comPortIndex, atoi(BAUD_RATE)) == 0)
-    if (comOpen(comPortIndex, BAUD_RATE) == 0) // ici atoi ne sert à rien car on a déjà un entier
-    {
-        gcs().send_text(MAV_SEVERITY_CRITICAL, "Orientus : Could not open serial port\n");
-        return false;
-    }
-
     /* Request all the configuration and the device information from the unit */
     transmit(request_all_configuration, sizeof(request_all_configuration));
 
@@ -139,7 +122,18 @@ bool AP_InertialSensor_ORIENTUS::hardware_init()
 
 bool AP_InertialSensor_ORIENTUS::init()
 {
-    return hardware_init();
+    const auto &serial_manager = AP::serialmanager();
+    AP_HAL::UARTDriver *driv = serial_manager.find_serial(AP_SerialManager::SerialProtocol_ORIENTUS, 0);
+    _driv = driv;
+    if (!driv)
+    {
+        gcs().send_text(MAV_SEVERITY_CRITICAL, "Pas de driver");
+        return false;
+    }
+    else
+    {
+        return hardware_init();
+    }
 }
 
 /*
@@ -147,71 +141,74 @@ bool AP_InertialSensor_ORIENTUS::init()
  */
 void AP_InertialSensor_ORIENTUS::read_packet(void)
 {
-    int bytes_received;
-    an_packet_transmit(encode_request_packet(packet_id_system_state));
-    an_packet_transmit(encode_request_packet(packet_id_raw_sensors));
-    if ((bytes_received = receive(an_decoder_pointer(&an_decoder), an_decoder_size(&an_decoder))) > 0)
-    { /* increment the decode buffer length by the number of bytes received */
-        an_decoder_increment(&an_decoder, bytes_received);
-        /* decode all the packets in the buffer */
-        while ((an_packet = an_packet_decode(&an_decoder)) != NULL)
-        {
-            if (an_packet->id == packet_id_system_state) /* system state packet */
+    if (++compt == DEV_BACKEND_SAMPLE_PER) {
+        compt = 0;
+        int bytes_received;
+        an_packet_transmit(encode_request_packet(packet_id_system_state));
+        an_packet_transmit(encode_request_packet(packet_id_raw_sensors));
+        if ((bytes_received = receive(an_decoder_pointer(&an_decoder), an_decoder_size(&an_decoder))) > 0)
+        { /* increment the decode buffer length by the number of bytes received */
+            an_decoder_increment(&an_decoder, bytes_received);
+            /* decode all the packets in the buffer */
+            while ((an_packet = an_packet_decode(&an_decoder)) != NULL)
             {
-                if (decode_system_state_packet(&system_state_packet, an_packet) == 0)
+                if (an_packet->id == packet_id_system_state) /* system state packet */
                 {
-                    if (system_state_packet.system_status.b.accelerometer_over_range)
+                    if (decode_system_state_packet(&system_state_packet, an_packet) == 0)
                     {
-                        if ((accel_over_range_counter++ % 400) == 0)
+                        if (system_state_packet.system_status.b.accelerometer_over_range)
                         {
-                            gcs().send_text(MAV_SEVERITY_CRITICAL, "Accelerometer Over Range");
+                            if ((accel_over_range_counter++ % 400) == 0)
+                            {
+                                gcs().send_text(MAV_SEVERITY_CRITICAL, "Accelerometer Over Range");
+                            }
+                        }
+                        else
+                        {
+                            accel_over_range_counter = 0;
+                        }
+                        if (system_state_packet.system_status.b.gyroscope_over_range)
+                        {
+                            if ((gyro_over_range_counter++ % 400) == 0)
+                            {
+                                gcs().send_text(MAV_SEVERITY_CRITICAL, "Gyroscope Over Range");
+                            }
+                        }
+                        else
+                        {
+                            gyro_over_range_counter = 0;
+                        }
+                    }
+                }
+                else if (an_packet->id == packet_id_raw_sensors) /* raw sensors packet */
+                {
+                    /* copy all the binary data into the typedef struct for the packet */
+                    /* this allows easy access to all the different values             */
+                    if (decode_raw_sensors_packet(&raw_sensors_packet, an_packet) == 0)
+                    {
+                        Vector3f accel(raw_sensors_packet.accelerometers[0], raw_sensors_packet.accelerometers[1], raw_sensors_packet.accelerometers[2]);
+                        _rotate_and_correct_accel(accel_instance, accel);
+                        _notify_new_accel_raw_sample(accel_instance, accel);
+
+                        Vector3f gyro(raw_sensors_packet.gyroscopes[0], raw_sensors_packet.gyroscopes[1], raw_sensors_packet.gyroscopes[2]);
+                        _rotate_and_correct_gyro(gyro_instance, gyro);
+                        _notify_new_gyro_raw_sample(gyro_instance, gyro);
+
+                        if (temperature_counter++ == 100)
+                        {
+                            temperature_counter = 0;
+                            float temp_degc = raw_sensors_packet.imu_temperature;
+                            _publish_temperature(accel_instance, temp_degc);
                         }
                     }
                     else
                     {
-                        accel_over_range_counter = 0;
-                    }
-                    if (system_state_packet.system_status.b.gyroscope_over_range)
-                    {
-                        if ((gyro_over_range_counter++ % 400) == 0)
-                        {
-                            gcs().send_text(MAV_SEVERITY_CRITICAL, "Gyroscope Over Range");
-                        }
-                    }
-                    else
-                    {
-                        gyro_over_range_counter = 0;
+                        gcs().send_text(MAV_SEVERITY_CRITICAL, "Probleme decryptage");
                     }
                 }
+                /* Ensure that you free the an_packet when your done with it or you will leak memory */
+                an_packet_free(&an_packet);
             }
-            else if (an_packet->id == packet_id_raw_sensors) /* raw sensors packet */
-            {
-                /* copy all the binary data into the typedef struct for the packet */
-                /* this allows easy access to all the different values             */
-                if (decode_raw_sensors_packet(&raw_sensors_packet, an_packet) == 0)
-                {
-                    Vector3f accel(raw_sensors_packet.accelerometers[0], raw_sensors_packet.accelerometers[1], raw_sensors_packet.accelerometers[2]);
-                    _rotate_and_correct_accel(accel_instance, accel);
-                    _notify_new_accel_raw_sample(accel_instance, accel);
-
-                    Vector3f gyro(raw_sensors_packet.gyroscopes[0], raw_sensors_packet.gyroscopes[1], raw_sensors_packet.gyroscopes[2]);
-                    _rotate_and_correct_gyro(gyro_instance, gyro);
-                    _notify_new_gyro_raw_sample(gyro_instance, gyro);
-
-                    if (temperature_counter++ == 100)
-                    {
-                        temperature_counter = 0;
-                        float temp_degc = raw_sensors_packet.imu_temperature;
-                        _publish_temperature(accel_instance, temp_degc);
-                    }
-                }
-                else
-                {
-                    gcs().send_text(MAV_SEVERITY_CRITICAL, "Probleme decryptage");
-                }
-            }
-            /* Ensure that you free the an_packet when your done with it or you will leak memory */
-            an_packet_free(&an_packet);
         }
     }
 }
@@ -225,28 +222,12 @@ bool AP_InertialSensor_ORIENTUS::update()
 
 int AP_InertialSensor_ORIENTUS::transmit(const unsigned char *data, int length)
 {
-#if CONNECTION_TYPE == RS232
-    return comWrite(comPortIndex, data, length);
-#elif CONNECTION_TYPE == NETWORK
-#if _WIN32
-    return send(socket_fd, (char *)data, length, 0);
-#else
-    return write(socket_fd, data, length);
-#endif
-#endif
+    return _driv->write(data, length);
 }
 
 int AP_InertialSensor_ORIENTUS::receive(unsigned char *data, int length)
 {
-#if CONNECTION_TYPE == RS232
-    return comRead(comPortIndex, data, length);
-#elif CONNECTION_TYPE == NETWORK
-#if _WIN32
-    return recv(socket_fd, (char *)data, length, 0);
-#else
-    return read(socket_fd, data, length);
-#endif
-#endif
+    return _driv->read(data, length);
 }
 
 int AP_InertialSensor_ORIENTUS::an_packet_transmit(an_packet_t *packet)
