@@ -27,7 +27,7 @@ private:
     system_state_packet_t system_state_packet;
     raw_sensors_packet_t raw_sensors_packet;
 
-      uint8_t compt;
+    uint8_t compt;
 
     AP_InertialSensor_ORIENTUS(AP_InertialSensor &imu,
                                enum Rotation rotation);
@@ -52,10 +52,6 @@ private:
     enum Rotation rotation;
     uint8_t temperature_counter;
     AP_HAL::OwnPtr<AP_HAL::UARTDriver> _driv;
-
-    uint16_t accel_over_range_counter;
-    
-    uint16_t gyro_over_range_counter;
 
     int transmit(const unsigned char *data, int length);
     int receive(unsigned char *data, int length);

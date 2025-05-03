@@ -4,55 +4,27 @@
 #include <AP_Math/AP_Math.h>
 #include <GCS_MAVLink/GCS.h>
 
-#define RS232 0
-#define NETWORK 1
-
-#define CONNECTION_TYPE RS232
-
-// #include <stdlib.h> //déjà inclus dans un header de Orientus_scripts
+#include <stdlib.h> //déjà inclus dans un header de Orientus_scripts
 #include <stdio.h>
-// #include <stdint.h> //déjà inclus dans un header de Orientus_scripts
+#include <stdint.h> //déjà inclus dans un header de Orientus_scripts
 #define _USE_MATH_DEFINES
 #include <math.h>
 #include <time.h>
 #include <string.h>
 
-#ifdef _WIN32
-#include <windows.h>
-#if CONNECTION_TYPE == NETWORK
-#define _WIN32_WINNT 0x0501
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#endif
-#else
 #include <unistd.h>
-// #if CONNECTION_TYPE == RS232
-// #include "rs232/rs232.h"
-// #elif CONNECTION_TYPE == NETWORK
-// #include <sys/socket.h>
-// #include <arpa/inet.h>
-// #include <netdb.h>
-// #endif
-#endif
 
 #include "AP_InertialSensor_ORIENTUS.h"
-#include "ORIENTUS_scripts/rs232.h"
 
-#define ACCEL_BACKEND_SAMPLE_RATE 2000
-#define GYRO_BACKEND_SAMPLE_RATE 2000
 #define DEV_BACKEND_SAMPLE_PER 2
 #define DEV_BACKEND_SAMPLE_RATE 1000 / DEV_BACKEND_SAMPLE_PER
 
-#define RADIANS_TO_DEGREES (180.0 / M_PI)
-
 static unsigned char request_all_configuration[] = {0xE2, 0x01, 0x10, 0x9A, 0x73, 0xB6, 0xB4, 0xB5, 0xB8, 0xB9, 0xBA, 0xBC, 0xBD, 0xC0, 0xC2, 0xC3, 0xC4, 0x03, 0xC6, 0x45, 0xC7};
-
 
 extern const AP_HAL::HAL &hal;
 
 #define int16_val(v, idx) ((int16_t)(((uint16_t)v[2 * idx] << 8) | v[2 * idx + 1]))
 
-#define BAUD_RATE 112500
 
 AP_InertialSensor_ORIENTUS::AP_InertialSensor_ORIENTUS(AP_InertialSensor &imu,
                                                        enum Rotation _rotation)
@@ -127,7 +99,7 @@ bool AP_InertialSensor_ORIENTUS::init()
     _driv = driv;
     if (!driv)
     {
-        gcs().send_text(MAV_SEVERITY_CRITICAL, "Pas de driver");
+        gcs().send_text(MAV_SEVERITY_CRITICAL, "No driver found");
         return false;
     }
     else
@@ -136,51 +108,18 @@ bool AP_InertialSensor_ORIENTUS::init()
     }
 }
 
-/*
-  read packet
- */
 void AP_InertialSensor_ORIENTUS::read_packet(void)
 {
     if (++compt == DEV_BACKEND_SAMPLE_PER) {
         compt = 0;
         int bytes_received;
-        an_packet_transmit(encode_request_packet(packet_id_system_state));
         an_packet_transmit(encode_request_packet(packet_id_raw_sensors));
         if ((bytes_received = receive(an_decoder_pointer(&an_decoder), an_decoder_size(&an_decoder))) > 0)
-        { /* increment the decode buffer length by the number of bytes received */
+        {
             an_decoder_increment(&an_decoder, bytes_received);
-            /* decode all the packets in the buffer */
             while ((an_packet = an_packet_decode(&an_decoder)) != NULL)
             {
-                if (an_packet->id == packet_id_system_state) /* system state packet */
-                {
-                    if (decode_system_state_packet(&system_state_packet, an_packet) == 0)
-                    {
-                        if (system_state_packet.system_status.b.accelerometer_over_range)
-                        {
-                            if ((accel_over_range_counter++ % 400) == 0)
-                            {
-                                gcs().send_text(MAV_SEVERITY_CRITICAL, "Accelerometer Over Range");
-                            }
-                        }
-                        else
-                        {
-                            accel_over_range_counter = 0;
-                        }
-                        if (system_state_packet.system_status.b.gyroscope_over_range)
-                        {
-                            if ((gyro_over_range_counter++ % 400) == 0)
-                            {
-                                gcs().send_text(MAV_SEVERITY_CRITICAL, "Gyroscope Over Range");
-                            }
-                        }
-                        else
-                        {
-                            gyro_over_range_counter = 0;
-                        }
-                    }
-                }
-                else if (an_packet->id == packet_id_raw_sensors) /* raw sensors packet */
+                if (an_packet->id == packet_id_raw_sensors) /* raw sensors packet */
                 {
                     /* copy all the binary data into the typedef struct for the packet */
                     /* this allows easy access to all the different values             */
@@ -203,7 +142,7 @@ void AP_InertialSensor_ORIENTUS::read_packet(void)
                     }
                     else
                     {
-                        gcs().send_text(MAV_SEVERITY_CRITICAL, "Probleme decryptage");
+                        gcs().send_text(MAV_SEVERITY_CRITICAL, "Decription Issue");
                     }
                 }
                 /* Ensure that you free the an_packet when your done with it or you will leak memory */
