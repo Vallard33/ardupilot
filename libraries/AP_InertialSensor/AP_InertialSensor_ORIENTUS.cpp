@@ -9,34 +9,17 @@
 
 #define CONNECTION_TYPE RS232
 
-// #include <stdlib.h> //déjà inclus dans un header de Orientus_scripts
+#include <stdlib.h> //déjà inclus dans un header de Orientus_scripts
 #include <stdio.h>
-// #include <stdint.h> //déjà inclus dans un header de Orientus_scripts
+#include <stdint.h> //déjà inclus dans un header de Orientus_scripts
 #define _USE_MATH_DEFINES
 #include <math.h>
 #include <time.h>
 #include <string.h>
 
-#ifdef _WIN32
-#include <windows.h>
-#if CONNECTION_TYPE == NETWORK
-#define _WIN32_WINNT 0x0501
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#endif
-#else
 #include <unistd.h>
-// #if CONNECTION_TYPE == RS232
-// #include "rs232/rs232.h"
-// #elif CONNECTION_TYPE == NETWORK
-// #include <sys/socket.h>
-// #include <arpa/inet.h>
-// #include <netdb.h>
-// #endif
-#endif
 
 #include "AP_InertialSensor_ORIENTUS.h"
-#include "ORIENTUS_scripts/rs232.h"
 
 #define ACCEL_BACKEND_SAMPLE_RATE 2000
 #define GYRO_BACKEND_SAMPLE_RATE 2000
@@ -46,7 +29,6 @@
 #define RADIANS_TO_DEGREES (180.0 / M_PI)
 
 static unsigned char request_all_configuration[] = {0xE2, 0x01, 0x10, 0x9A, 0x73, 0xB6, 0xB4, 0xB5, 0xB8, 0xB9, 0xBA, 0xBC, 0xBD, 0xC0, 0xC2, 0xC3, 0xC4, 0x03, 0xC6, 0x45, 0xC7};
-
 
 extern const AP_HAL::HAL &hal;
 
@@ -65,7 +47,7 @@ AP_InertialSensor_ORIENTUS::probe(AP_InertialSensor &imu,
                                   enum Rotation rotation)
 {
     auto sensor = NEW_NOTHROW AP_InertialSensor_ORIENTUS(imu, rotation);
-    
+
     if (!sensor)
     {
         return nullptr;
@@ -91,7 +73,9 @@ void AP_InertialSensor_ORIENTUS::start()
     }
     bus_id++;
     hal.scheduler->register_timer_process(FUNCTOR_BIND_MEMBER(&AP_InertialSensor_ORIENTUS::read_packet, void));
-    compt =0;
+    compt = 0;
+    accel_over_range_counter = 0;
+    gyro_over_range_counter = 0;
 
     // setup sensor rotations from probe()
     set_gyro_orientation(gyro_instance, rotation);
@@ -100,22 +84,27 @@ void AP_InertialSensor_ORIENTUS::start()
 
 bool AP_InertialSensor_ORIENTUS::hardware_init()
 {
-    /* Request all the configuration and the device information from the unit */
-    transmit(request_all_configuration, sizeof(request_all_configuration));
-
     an_decoder_initialise(&an_decoder);
 
-    packet_periods_packet_t packet1 = {
-        .permanent = 0,
-        .clear_existing_packets = 1,
-        .packet_periods = {}};
-    an_packet_transmit(encode_packet_periods_packet(&packet1));
+    if (_driv->lock_port(1, 1))
+    {
 
-    sensor_ranges_packet_t packet2 = {
-        .permanent = 0,
-        .accelerometers_range = accelerometer_range_4g,
-        .gyroscopes_range = gyroscope_range_250dps};
-    an_packet_transmit(encode_sensor_ranges_packet(&packet2));
+        /* Request all the configuration and the device information from the unit */
+        transmit(request_all_configuration, sizeof(request_all_configuration));
+
+        packet_periods_packet_t packet1 = {
+            .permanent = 0,
+            .clear_existing_packets = 1,
+            .packet_periods = {}};
+        an_packet_transmit(encode_packet_periods_packet(&packet1));
+
+        sensor_ranges_packet_t packet2 = {
+            .permanent = 0,
+            .accelerometers_range = accelerometer_range_4g,
+            .gyroscopes_range = gyroscope_range_250dps};
+        an_packet_transmit(encode_sensor_ranges_packet(&packet2));
+        _driv->lock_port(0, 0);
+    }
 
     return true;
 }
@@ -132,6 +121,7 @@ bool AP_InertialSensor_ORIENTUS::init()
     }
     else
     {
+        gcs().send_text(MAV_SEVERITY_CRITICAL, "driver");   
         return hardware_init();
     }
 }
@@ -141,13 +131,20 @@ bool AP_InertialSensor_ORIENTUS::init()
  */
 void AP_InertialSensor_ORIENTUS::read_packet(void)
 {
-    if (++compt == DEV_BACKEND_SAMPLE_PER) {
+    if (++compt == DEV_BACKEND_SAMPLE_PER)
+    {
         compt = 0;
-        int bytes_received;
-        an_packet_transmit(encode_request_packet(packet_id_system_state));
-        an_packet_transmit(encode_request_packet(packet_id_raw_sensors));
-        if ((bytes_received = receive(an_decoder_pointer(&an_decoder), an_decoder_size(&an_decoder))) > 0)
-        { /* increment the decode buffer length by the number of bytes received */
+        int bytes_received=0;
+        if (_driv->lock_port(1, 1))
+        {
+            an_packet_transmit(encode_request_packet(packet_id_system_state));
+            an_packet_transmit(encode_request_packet(packet_id_raw_sensors));
+            bytes_received = receive(an_decoder_pointer(&an_decoder), an_decoder_size(&an_decoder));
+            _driv->lock_port(0, 0);
+        }
+        if (bytes_received > 0)
+        {
+            /* increment the decode buffer length by the number of bytes received */
             an_decoder_increment(&an_decoder, bytes_received);
             /* decode all the packets in the buffer */
             while ((an_packet = an_packet_decode(&an_decoder)) != NULL)
@@ -222,12 +219,12 @@ bool AP_InertialSensor_ORIENTUS::update()
 
 int AP_InertialSensor_ORIENTUS::transmit(const unsigned char *data, int length)
 {
-    return _driv->write(data, length);
+    return _driv->write_locked(data, length, 1);
 }
 
 int AP_InertialSensor_ORIENTUS::receive(unsigned char *data, int length)
 {
-    return _driv->read(data, length);
+    return _driv->read_locked(data, length, 1);
 }
 
 int AP_InertialSensor_ORIENTUS::an_packet_transmit(an_packet_t *packet)

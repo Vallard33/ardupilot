@@ -4,54 +4,29 @@
 #include <AP_Math/AP_Math.h>
 #include <GCS_MAVLink/GCS.h>
 
-#define RS232 0
-#define NETWORK 1
-
-#define CONNECTION_TYPE RS232
-
-// #include <stdlib.h> //déjà inclus dans un header de Orientus_scripts
+#include <stdlib.h> //déjà inclus dans un header de Orientus_scripts
 #include <stdio.h>
-// #include <stdint.h> //déjà inclus dans un header de Orientus_scripts
+#include <stdint.h> //déjà inclus dans un header de Orientus_scripts
 #define _USE_MATH_DEFINES
 #include <math.h>
 #include <time.h>
 #include <string.h>
 
-#ifdef _WIN32
-#include <windows.h>
-#if CONNECTION_TYPE == NETWORK
-#define _WIN32_WINNT 0x0501
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#endif
-socket_fdM #else
 #include <unistd.h>
-// #if CONNECTION_TYPE == RS232
-// #include "rs232/rs232.h"
-// #elif CONNECTION_TYPE == NETWORK
-// #include <sys/socket.h>
-// #include <arpa/inet.h>
-// #include <netdb.h>
-// #endif
-#endif
 
 #include "AP_Compass_ORIENTUS.h"
-#include "../../AP_InertialSensor/ORIENTUS_scripts/rs232.h"
 
 #define MAG_BACKEND_SAMPLE_RATE 100
 #define KEY_COMPASS 2 // key for locking the port (1 for imu)
 
-#define RADIANS_TO_DEGREES (180.0 / M_PI)
-
-    static unsigned char request_all_configuration[] = {0xE2, 0x01, 0x10, 0x9A, 0x73, 0xB6, 0xB4, 0xB5, 0xB8, 0xB9, 0xBA, 0xBC, 0xBD, 0xC0, 0xC2, 0xC3, 0xC4, 0x03, 0xC6, 0x45, 0xC7};
-
+static unsigned char request_all_configuration[] = {0xE2, 0x01, 0x10, 0x9A, 0x73, 0xB6, 0xB4, 0xB5, 0xB8, 0xB9, 0xBA, 0xBC, 0xBD, 0xC0, 0xC2, 0xC3, 0xC4, 0x03, 0xC6, 0x45, 0xC7};
 
 extern const AP_HAL::HAL &hal;
 
 #define int16_val(v, idx) ((int16_t)(((uint16_t)v[2 * idx] << 8) | v[2 * idx + 1]))
 
 #define BAUD_RATE 112500
-#define DEV_BACKEND_SAMPLE_PER 10 //100Hz
+#define DEV_BACKEND_SAMPLE_PER 10 // 100Hz
 
 AP_Compass_ORIENTUS::AP_Compass_ORIENTUS(enum Rotation rotation)
     : _rotation(rotation)
@@ -66,6 +41,7 @@ AP_Compass_Backend *AP_Compass_ORIENTUS::probe(enum Rotation rotation)
     AP_Compass_ORIENTUS *sensor = NEW_NOTHROW AP_Compass_ORIENTUS(rotation);
     if (!sensor || !sensor->init())
     {
+        gcs().send_text(MAV_SEVERITY_CRITICAL, "aie aie aie");
         delete sensor;
         return nullptr;
     }
@@ -74,10 +50,11 @@ AP_Compass_Backend *AP_Compass_ORIENTUS::probe(enum Rotation rotation)
 
 bool AP_Compass_ORIENTUS::hardware_init()
 {
+    gcs().send_text(MAV_SEVERITY_CRITICAL, "hardware init");
+    an_decoder_initialise(&an_decoder);
+    // if (_driv->lock_port(2,2)) {
     /* Request all the configuration and the device information from the unit */
     transmit(request_all_configuration, sizeof(request_all_configuration));
-
-    an_decoder_initialise(&an_decoder);
 
     packet_periods_packet_t packet1 = {
         .permanent = 0,
@@ -91,18 +68,16 @@ bool AP_Compass_ORIENTUS::hardware_init()
         .gyroscopes_range = gyroscope_range_250dps,
         .magnetometers_range = magnetometer_range_2g};
     an_packet_transmit(encode_sensor_ranges_packet(&packet2));
-
+    //_driv->lock_port(0,0);
+    //}
     return true;
 }
 
 bool AP_Compass_ORIENTUS::init()
 {
-    
-    gcs().send_text(MAV_SEVERITY_CRITICAL, "init");
-    set_rotation(_compass_instance, _rotation);
-
     const auto &serial_manager = AP::serialmanager();
     AP_HAL::UARTDriver *driv = serial_manager.find_serial(AP_SerialManager::SerialProtocol_ORIENTUS, 0);
+    _driv = driv;
     if (!driv)
     {
         gcs().send_text(MAV_SEVERITY_CRITICAL, "Pas de driver");
@@ -110,12 +85,15 @@ bool AP_Compass_ORIENTUS::init()
     }
     if (!register_compass(AP_HAL::Device::make_bus_id(AP_HAL::Device::BUS_TYPE_SERIAL, bus_id, 0, DEVTYPE_ORIENTUS), _compass_instance))
     {
+        gcs().send_text(MAV_SEVERITY_CRITICAL, "oupsi");
         return false;
     }
 
-    set_dev_id(_compass_instance, AP_HAL::Device::make_bus_id(AP_HAL::Device::BUS_TYPE_SERIAL, bus_id, 0, DEVTYPE_ORIENTUS));
+    set_dev_id(_compass_instance, AP_HAL::Device::make_bus_id(AP_HAL::Device::BUS_TYPE_SERIAL, bus_id, 1, DEVTYPE_ORIENTUS));
+    set_rotation(_compass_instance, _rotation);
     hal.scheduler->register_timer_process(FUNCTOR_BIND_MEMBER(&AP_Compass_ORIENTUS::_update, void));
-    compt =0;
+    compt = 0;
+    mag_over_range_counter = 0;
     return hardware_init();
 }
 
@@ -124,10 +102,14 @@ bool AP_Compass_ORIENTUS::init()
  */
 bool AP_Compass_ORIENTUS::read_packet(void)
 {
-    gcs().send_text(MAV_SEVERITY_CRITICAL, "compass");
-    an_packet_transmit(encode_request_packet(packet_id_system_state));
+    int bytes_received = 0;
+    // if (_driv->lock_port(2, 2))
+    //{
+    // an_packet_transmit(encode_request_packet(packet_id_system_state));
     an_packet_transmit(encode_request_packet(packet_id_raw_sensors));
-    int bytes_received = receive(an_decoder_pointer(&an_decoder), an_decoder_size(&an_decoder));
+    bytes_received = receive(an_decoder_pointer(&an_decoder), an_decoder_size(&an_decoder));
+    //    _driv->lock_port(0, 0);
+    //}
     if (bytes_received > 0)
     { /* increment the decode buffer length by the number of bytes received */
         an_decoder_increment(&an_decoder, bytes_received);
@@ -152,10 +134,9 @@ bool AP_Compass_ORIENTUS::read_packet(void)
                     }
                 }
             }
-            else if (an_packet->id == packet_id_raw_sensors) /* raw sensors packet */
-            {
-                /* copy all the binary data into the typedef struct for the packet */
-                /* this allows easy access to all the different values             */
+            // else if (an_packet->id == packet_id_raw_sensors) /* raw sensors packet */
+            if (an_packet->id == packet_id_raw_sensors) /* raw sensors packet */
+            {               
                 if (decode_raw_sensors_packet(&raw_sensors_packet, an_packet) == 0)
                 {
                     _mag_x = raw_sensors_packet.magnetometers[0];
@@ -176,15 +157,17 @@ bool AP_Compass_ORIENTUS::read_packet(void)
 }
 
 void AP_Compass_ORIENTUS::_update()
-{   if (++compt==DEV_BACKEND_SAMPLE_PER){
-        compt = 0;
-        if (!read_packet())
-        {
-            return;
-        }
-        Vector3f raw_field = Vector3f((float)_mag_x, (float)_mag_y, (float)_mag_z);
-        accumulate_sample(raw_field, _compass_instance);
+{
+    // if (++compt == DEV_BACKEND_SAMPLE_PER)
+    //{
+    //     compt = 0;
+    if (!read_packet())
+    {
+        return;
     }
+    Vector3f raw_field = Vector3f((float)_mag_x, (float)_mag_y, (float)_mag_z);
+    accumulate_sample(raw_field, _compass_instance);
+    //}
 }
 
 void AP_Compass_ORIENTUS::read()
@@ -194,11 +177,13 @@ void AP_Compass_ORIENTUS::read()
 
 int AP_Compass_ORIENTUS::transmit(const unsigned char *data, int length)
 {
+    //    return _driv->write_locked(data, length, 2);
     return _driv->write(data, length);
 }
 
 int AP_Compass_ORIENTUS::receive(unsigned char *data, int length)
 {
+    // return _driv->read_locked(data, length, 2);
     return _driv->read(data, length);
 }
 int AP_Compass_ORIENTUS::an_packet_transmit(an_packet_t *packet)
